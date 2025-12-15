@@ -67,6 +67,7 @@ private:
 	volatile bool drop_first_rx_byte_;
 	
 	bool inited_;
+	static bool dma_irq_installed_;
 	volatile uint32_t tx_dma_active_count_;
 private:
 	// TX DMA 起動(必要なら自動実行)
@@ -75,6 +76,8 @@ private:
 	void dma_irq_handler();
 	// グローバルIRQ から呼ばれるtrampoline
 	static void dma_irq_trampoline();	// static -> ISR
-	// インスタンスをIRQとむずびつけるため保持
-	static UartDma* instance_;
+	// インスタンスをIRQとむずびつけるため保持 DMAチャンネルは0~31
+	static UartDma* instance_by_dma_chan_[32];
+	// 2^nチェック
+	static bool is_power_of_two(size_t x);
 };

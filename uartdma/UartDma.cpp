@@ -1,8 +1,8 @@
 #include "UartDma.h"
 #include "hardware/sync.h"
 
-UartDma* UartDma::instance_ = nullptr;
-
+UartDma* UartDma::instance_by_dma_chan_[32]= { nullptr};
+bool UartDma::dma_irq_installed_ = false;
 UartDma::UartDma(uart_inst_t* uart, uint32_t baudrate,
 	uint tx_pin, uint rx_pin, size_t tx_buf_size, size_t rx_buf_size) :
 	uart_(uart), baudrate_(baudrate), tx_pin_(tx_pin), rx_pin_(rx_pin),
@@ -22,6 +22,8 @@ void UartDma::init(){
 
 	uart_set_fifo_enabled(uart_, true); // FIFO ON
 
+	assert(is_power_of_two(tx_size_));
+	assert(is_power_of_two(rx_size_));
 	// claim channels
 	dma_rx_chan_ = dma_claim_unused_channel(true);
 	dma_tx_chan_ = dma_claim_unused_channel(true);
@@ -50,19 +52,18 @@ void UartDma::init(){
 		tx_buf_,										// read addr (mem)
 		0, false);
 	
-	/* --- IRQ registration depending on channel number --- */
-	/* DMA channel 0~15 => IRQ0, 16~31 => IRQ1 */
-	int irq_num = (dma_tx_chan_ < 16) ? DMA_IRQ_0 : DMA_IRQ_1;
-	if(irq_num == DMA_IRQ_0){
+	if(!dma_irq_installed_){
 		irq_set_exclusive_handler(DMA_IRQ_0, dma_irq_trampoline);
-		irq_set_enabled(DMA_IRQ_0, true);
-		dma_channel_set_irq0_enabled(dma_tx_chan_, true);
-	} else {
 		irq_set_exclusive_handler(DMA_IRQ_1, dma_irq_trampoline);
+		irq_set_enabled(DMA_IRQ_0, true);
 		irq_set_enabled(DMA_IRQ_1, true);
-		dma_channel_set_irq1_enabled(dma_tx_chan_, true);
+		dma_irq_installed_ = true;
 	}
-	instance_ = this;
+	int irq_num = (dma_tx_chan_ < 16) ? DMA_IRQ_0 :  DMA_IRQ_1;
+	if(irq_num == DMA_IRQ_0) dma_channel_set_irq0_enabled(dma_tx_chan_, true);
+	else dma_channel_set_irq1_enabled(dma_tx_chan_, true);
+
+	instance_by_dma_chan_[dma_tx_chan_] = this;
 	// enable UART DMA (both RX/TX)
 	inited_ = true;
     // debug print: which channels we got (safe here)
@@ -165,13 +166,6 @@ void UartDma::start_tx_dma_if_needed(){
 
 
 void UartDma::dma_irq_handler(){
-    // Clear the interrupt bit for the TX channel
-	if(dma_tx_chan_ < 16) {
- 	   dma_hw->ints0 = 1u << dma_tx_chan_;
-	} else {
-		dma_hw->ints1 = 1u << (dma_tx_chan_ - 16);
-	}
-
  	// Sent bytes = value saved at start
  	uint32_t sent = tx_dma_active_count_;
 	if(sent){
@@ -188,5 +182,28 @@ void UartDma::dma_irq_handler(){
 }
 
 void UartDma::dma_irq_trampoline(){
-	if(instance_) instance_->dma_irq_handler();
+	// IRQ0(0-15)
+	uint32_t ints0 = dma_hw->ints0;
+	while(ints0){
+		int ch = __builtin_ctz(ints0);
+		dma_hw->ints0 = 1u << ch;
+		if(instance_by_dma_chan_[ch]){
+			instance_by_dma_chan_[ch]->dma_irq_handler();
+		}
+		ints0 &= ints0 - 1;
+	}
+	// IRQ1(16-31)
+	uint32_t ints1 = dma_hw->ints1;
+	while(ints1){
+		int ch = __builtin_ctz(ints1) + 16;
+		dma_hw->ints1 = 1u << (ch - 16);
+		if(instance_by_dma_chan_[ch]){
+			instance_by_dma_chan_[ch]->dma_irq_handler();
+		}
+		ints1 &= ints1 - 1;
+	}
+}
+
+bool UartDma::is_power_of_two(size_t x){
+	return x && ((x & (x-1)) == 0);
 }
