@@ -6,11 +6,6 @@
 #include "hardware/dma.h"
 #include "hardware/irq.h"
 
-#define UART_BASE UART0_BASE
-#define UART_ID uart0
-#define UART_TX_PIN	0
-#define UART_RX_PIN 1
-#define BAUDRATE 115200
 /*
  * UartDma
  * RP2040 向け UART DMA 安全ラッパ
@@ -72,6 +67,7 @@ private:
 private:
 	// TX DMA 起動(必要なら自動実行)
 	void start_tx_dma_if_needed();
+	void start_tx_dma_if_needed_isr();
 	// DMA IRQハンドラ
 	void dma_irq_handler();
 	// グローバルIRQ から呼ばれるtrampoline
