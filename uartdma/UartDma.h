@@ -17,10 +17,15 @@
  *  - ISRは static trampoline → instance メソッド方式で安全
  *  - 複数UARTに対応（インスタンスごとに完全に分離）
  */
+/*
+	受信バッファサイズと送信バッファサイズは2のべき乗である必要があります
+	受信バッファサイズ(rx_size_)　は、最大32768バイトまで設定可能(DMAリングバッファの制限)
+*/
 class UartDma{
 public:
-	UartDma(uart_inst_t *uart, uint32_t baudrate, uint tx_pin, uint rx_pin,
-		size_t tx_buf_size=256, size_t rx_buf_size=256);
+	UartDma(uart_inst_t *uart=uart0, uint32_t baudrate=115200, uint tx_pin=0, uint rx_pin=1,
+		size_t tx_buf_size=8192, size_t rx_buf_size=4096);
+	~UartDma();
 	// === Uart + DMA初期化 ===
 	void init();
 	// ====================================
@@ -34,11 +39,18 @@ public:
 	// 	TX
 	// ====================================
 	/* 1バイト送信(リングバッファへ積む) */
-	void write_byte(uint8_t b);
+	bool write_byte(uint8_t b);
 	/* 文字列送信(NULL終端) */
 	void write_string(const char *s);
 	/* まとめ送信 */
 	void write_buffer(const uint8_t* data, size_t len);
+	/* Blocking版 */
+	void write_byte_blocking(uint8_t b);
+	void write_buffer_blocking(const uint8_t* data, size_t len);
+	/* フレーム送信（Blocking版） */
+	bool write_frame_blocking(const uint8_t* frame, size_t len);
+	// 送信ドロップカウント取得
+	uint32_t get_tx_full_hit_count() const;
 private:
 	// 内部状態
 	uart_inst_t* uart_;
@@ -64,9 +76,13 @@ private:
 	bool inited_;
 	static bool dma_irq_installed_;
 	volatile uint32_t tx_dma_active_count_;
-private:
+	volatile uint32_t tx_full_hit_count_;
+	/* DMA送信チャンク上限値 */
+	uint32_t TX_DMA_CHUNK_MAX;
+	private:
 	// TX DMA 起動(必要なら自動実行)
 	void start_tx_dma_if_needed();
+	void start_tx_dma_locked();
 	void start_tx_dma_if_needed_isr();
 	// DMA IRQハンドラ
 	void dma_irq_handler();
@@ -76,4 +92,6 @@ private:
 	static UartDma* instance_by_dma_chan_[32];
 	// 2^nチェック
 	static bool is_power_of_two(size_t x);
+	void * aligned_alloc_for_dma(size_t size, size_t alignment);
+	void aligned_free_for_dma(void* ptr);
 };

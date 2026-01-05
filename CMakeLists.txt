@@ -11,7 +11,7 @@ add_subdirectory(uartdma)
 
 # === send バイナリ ===
 add_executable(send 
-sender/sender.cpp
+sender/send_sequence.cpp
 )
 
 # set_target_properties(send PROPERTIES PICO_BOARD pico)
@@ -33,7 +33,7 @@ pico_add_extra_outputs(send)
 
 # === recv バイナリ ===
 add_executable(recv 
-receiver/receiver.cpp
+receiver/recv_sequencecheck.cpp
 )
 
 #set_target_properties(recv PROPERTIES PICO_BOARD pico_w)
